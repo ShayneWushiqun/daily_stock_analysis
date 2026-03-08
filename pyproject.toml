@@ -1,3 +1,74 @@
+[project]
+name = "daily-stock-analysis"
+version = "1.0.0"
+description = "A股自选股智能分析系统"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    # 核心依赖
+    "python-dotenv>=1.0.0",
+    "tenacity>=8.2.0",
+    "sqlalchemy>=2.0.0",
+    "schedule>=1.2.0",
+    "exchange-calendars>=4.5.0",
+
+    # 数据源依赖
+    "efinance>=0.5.5",
+    "akshare>=1.12.0",
+    "tushare>=1.4.0",
+    "pytdx>=1.72",
+    "baostock>=0.8.0",
+    "yfinance>=0.2.0",
+
+    # 飞书
+    "lark-oapi>=1.0.0",
+
+    # 数据处理
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "json-repair>=0.55.1",
+
+    # AI 分析
+    "litellm>=1.80.10",
+    "tiktoken>=0.8.0,<0.12.0",
+    "openai>=1.0.0",
+    "PyYAML>=6.0",
+
+    # 搜索引擎
+    "tavily-python>=0.3.0",
+    "google-search-results>=2.4.0",
+
+    # 网络请求
+    "requests>=2.31.0",
+    "markdown2>=2.4.0",
+    "imgkit>=1.2.0",
+    "fake-useragent>=1.4.0",
+    "httpx[socks]",
+    "dingtalk-stream>=0.24.3",
+
+    # Discord 机器人
+    "discord.py>=2.0.0",
+
+    # Web Content Extraction
+    "newspaper3k>=0.2.8",
+    "lxml_html_clean",
+
+    # FastAPI Web 框架
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "python-multipart>=0.0.6",
+
+    # Supabase (PostgreSQL)
+    "psycopg2-binary>=2.9.0",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.0.0",
+    "pytest-timeout>=2.0.0",
+]
+
 [tool.black]
 line-length = 120
 target-version = ['py310', 'py311', 'py312']
@@ -22,7 +93,34 @@ exclude = '''
 profile = "black"
 line_length = 120
 skip = [".git", "__pycache__", ".env", "venv", ".venv"]
+known_first_party = [
+    "config", "storage", "analyzer", "notification", "scheduler",
+    "search_service", "market_analyzer", "stock_analyzer", "data_provider"
+]
 
 [tool.bandit]
 exclude_dirs = ["tests", "test_*.py"]
-skips = ["B101"]  # assert 语句在测试中是允许的
+skips = ["B101"]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+markers = [
+    "unit: fast offline unit tests",
+    "integration: service-level integration tests without external network dependency",
+    "network: tests requiring external network or third-party services",
+]
+
+[tool.flake8]
+max-line-length = 120
+exclude = [".git", "__pycache__", ".env", "venv", ".venv", "build", "dist", "*.egg-info"]
+ignore = ["E501", "W503", "E203", "E402"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src", "api", "bot", "data_provider", "strategies", "sources"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

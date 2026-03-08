@@ -8,6 +8,10 @@
 1. POST /api/v1/stocks/extract-from-image 从图片提取股票代码
 2. GET /api/v1/stocks/{code}/quote 实时行情接口
 3. GET /api/v1/stocks/{code}/history 历史行情接口
+4. GET /api/v1/stocks/watchlist 自选股列表
+5. POST /api/v1/stocks/watchlist 添加自选股
+6. PUT /api/v1/stocks/watchlist/{code} 更新自选股
+7. DELETE /api/v1/stocks/watchlist/{code} 删除自选股
 """
 
 import logging
@@ -16,10 +20,14 @@ from typing import Optional
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
 from api.v1.schemas.stocks import (
+    AddStockRequest,
     ExtractFromImageResponse,
     KLineData,
     StockHistoryResponse,
     StockQuote,
+    UpdateStockRequest,
+    WatchlistItem,
+    WatchlistResponse,
 )
 from api.v1.schemas.common import ErrorResponse
 from src.services.image_stock_extractor import (
@@ -107,6 +115,170 @@ def extract_from_image(
             status_code=500,
             detail={"error": "internal_error", "message": "图片提取失败"},
         )
+
+
+# === 自选股管理接口 ===
+
+
+@router.get(
+    "/watchlist",
+    response_model=WatchlistResponse,
+    summary="获取自选股列表",
+    description="从 Supabase 获取所有自选股（含活跃和非活跃）",
+)
+def get_watchlist() -> WatchlistResponse:
+    """获取自选股列表。"""
+    from src.repositories.stock_list_repo import StockListRepository
+
+    if not StockListRepository.is_available():
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "service_unavailable", "message": "Supabase 未配置或不可用，请检查 SUPABASE_DATABASE_URL"},
+        )
+
+    items_raw = StockListRepository.list_all()
+    items = []
+    for row in items_raw:
+        items.append(WatchlistItem(
+            id=row.get("id"),
+            stock_code=row.get("stock_code", ""),
+            stock_name=row.get("stock_name"),
+            notes=row.get("notes"),
+            is_active=row.get("is_active", True),
+            created_at=str(row["created_at"]) if row.get("created_at") else None,
+            updated_at=str(row["updated_at"]) if row.get("updated_at") else None,
+        ))
+    return WatchlistResponse(items=items, total=len(items))
+
+
+@router.post(
+    "/watchlist",
+    response_model=WatchlistItem,
+    responses={
+        200: {"description": "添加成功"},
+        400: {"description": "参数错误", "model": ErrorResponse},
+        503: {"description": "Supabase 不可用", "model": ErrorResponse},
+    },
+    summary="添加自选股",
+    description="向 Supabase 自选股列表添加股票",
+)
+def add_watchlist_stock(request: AddStockRequest) -> WatchlistItem:
+    """添加股票到自选列表。"""
+    from src.repositories.stock_list_repo import StockListRepository
+
+    if not StockListRepository.is_available():
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "service_unavailable", "message": "Supabase 未配置或不可用"},
+        )
+
+    # 自动建表
+    StockListRepository.ensure_table()
+
+    success = StockListRepository.add(
+        stock_code=request.stock_code,
+        stock_name=request.stock_name,
+        notes=request.notes,
+    )
+    if not success:
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "add_failed", "message": f"添加股票 {request.stock_code} 失败"},
+        )
+
+    # 返回添加后的完整记录
+    item = StockListRepository.get(request.stock_code)
+    if item:
+        return WatchlistItem(
+            id=item.get("id"),
+            stock_code=item.get("stock_code", ""),
+            stock_name=item.get("stock_name"),
+            notes=item.get("notes"),
+            is_active=item.get("is_active", True),
+            created_at=str(item["created_at"]) if item.get("created_at") else None,
+            updated_at=str(item["updated_at"]) if item.get("updated_at") else None,
+        )
+    return WatchlistItem(stock_code=request.stock_code.upper())
+
+
+@router.put(
+    "/watchlist/{stock_code}",
+    response_model=WatchlistItem,
+    responses={
+        200: {"description": "更新成功"},
+        404: {"description": "股票不在自选列表", "model": ErrorResponse},
+        503: {"description": "Supabase 不可用", "model": ErrorResponse},
+    },
+    summary="更新自选股",
+    description="更新 Supabase 自选股信息（名称、备注、是否启用）",
+)
+def update_watchlist_stock(stock_code: str, request: UpdateStockRequest) -> WatchlistItem:
+    """更新自选股信息。"""
+    from src.repositories.stock_list_repo import StockListRepository
+
+    if not StockListRepository.is_available():
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "service_unavailable", "message": "Supabase 未配置或不可用"},
+        )
+
+    success = StockListRepository.update(
+        stock_code=stock_code,
+        stock_name=request.stock_name,
+        notes=request.notes,
+        is_active=request.is_active,
+    )
+    if not success:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "not_found", "message": f"股票 {stock_code} 不在自选列表中"},
+        )
+
+    item = StockListRepository.get(stock_code)
+    if item:
+        return WatchlistItem(
+            id=item.get("id"),
+            stock_code=item.get("stock_code", ""),
+            stock_name=item.get("stock_name"),
+            notes=item.get("notes"),
+            is_active=item.get("is_active", True),
+            created_at=str(item["created_at"]) if item.get("created_at") else None,
+            updated_at=str(item["updated_at"]) if item.get("updated_at") else None,
+        )
+    return WatchlistItem(stock_code=stock_code.upper())
+
+
+@router.delete(
+    "/watchlist/{stock_code}",
+    responses={
+        200: {"description": "删除成功"},
+        404: {"description": "股票不在自选列表", "model": ErrorResponse},
+        503: {"description": "Supabase 不可用", "model": ErrorResponse},
+    },
+    summary="删除自选股",
+    description="从 Supabase 自选列表中删除股票（物理删除）",
+)
+def delete_watchlist_stock(stock_code: str):
+    """从自选列表删除股票。"""
+    from src.repositories.stock_list_repo import StockListRepository
+
+    if not StockListRepository.is_available():
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "service_unavailable", "message": "Supabase 未配置或不可用"},
+        )
+
+    success = StockListRepository.remove(stock_code)
+    if not success:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "not_found", "message": f"股票 {stock_code} 不在自选列表中"},
+        )
+
+    return {"message": f"股票 {stock_code.upper()} 已从自选删除"}
+
+
+# === 行情数据接口 ===
 
 
 @router.get(
@@ -257,3 +429,4 @@ def get_stock_history(
                 "message": f"获取历史行情失败: {str(e)}"
             }
         )
+

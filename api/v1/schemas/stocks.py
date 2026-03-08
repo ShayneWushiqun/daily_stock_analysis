@@ -100,3 +100,37 @@ class StockHistoryResponse(BaseModel):
                 "data": []
             }
         }
+
+
+# === 自选股管理 Schemas ===
+
+class WatchlistItem(BaseModel):
+    """自选股条目"""
+    id: Optional[int] = Field(None, description="记录ID")
+    stock_code: str = Field(..., description="股票代码")
+    stock_name: Optional[str] = Field(None, description="股票名称")
+    notes: Optional[str] = Field(None, description="备注")
+    is_active: bool = Field(True, description="是否启用")
+    created_at: Optional[str] = Field(None, description="创建时间")
+    updated_at: Optional[str] = Field(None, description="更新时间")
+
+
+class WatchlistResponse(BaseModel):
+    """自选股列表响应"""
+    items: List[WatchlistItem] = Field(default_factory=list, description="自选股列表")
+    total: int = Field(0, description="总数")
+
+
+class AddStockRequest(BaseModel):
+    """添加自选股请求"""
+    stock_code: str = Field(..., description="股票代码", min_length=1, max_length=20)
+    stock_name: Optional[str] = Field(None, description="股票名称")
+    notes: Optional[str] = Field(None, description="备注")
+
+
+class UpdateStockRequest(BaseModel):
+    """更新自选股请求"""
+    stock_name: Optional[str] = Field(None, description="股票名称")
+    notes: Optional[str] = Field(None, description="备注")
+    is_active: Optional[bool] = Field(None, description="是否启用")
+

@@ -226,6 +226,9 @@ class Config:
     # === 数据库配置 ===
     database_path: str = "./data/stock_analysis.db"
 
+    # === Supabase 配置 ===
+    supabase_database_url: Optional[str] = None
+
     # 是否保存分析上下文快照（用于历史回溯）
     save_context_snapshot: bool = True
 
@@ -643,6 +646,7 @@ class Config:
             md2img_engine=cls._parse_md2img_engine(os.getenv('MD2IMG_ENGINE', 'wkhtmltoimage')),
             prefetch_realtime_quotes=os.getenv('PREFETCH_REALTIME_QUOTES', 'true').lower() == 'true',
             database_path=os.getenv('DATABASE_PATH', './data/stock_analysis.db'),
+            supabase_database_url=os.getenv('SUPABASE_DATABASE_URL') or None,
             save_context_snapshot=os.getenv('SAVE_CONTEXT_SNAPSHOT', 'true').lower() == 'true',
             backtest_enabled=os.getenv('BACKTEST_ENABLED', 'true').lower() == 'true',
             backtest_eval_window_days=int(os.getenv('BACKTEST_EVAL_WINDOW_DAYS', '10')),
@@ -997,19 +1001,31 @@ class Config:
 
     def refresh_stock_list(self) -> None:
         """
-        热读取 STOCK_LIST 环境变量并更新配置中的自选股列表
-        
-        支持两种配置方式：
-        1. .env 文件（本地开发、定时任务模式） - 修改后下次执行自动生效
-        2. 系统环境变量（GitHub Actions、Docker） - 启动时固定，运行中不变
+        刷新自选股列表，优先级：
+        1. Supabase stock_watchlist 表（如果配置了 SUPABASE_DATABASE_URL）
+        2. .env 文件中的 STOCK_LIST
+        3. 系统环境变量 STOCK_LIST
+        4. 默认值 ['000001']
         """
-        # 优先从 .env 文件读取最新配置，这样即使在容器环境中修改了 .env 文件，
-        # 也能获取到最新的股票列表配置
+        # 优先从 Supabase 读取
+        if self.supabase_database_url:
+            try:
+                from src.repositories.stock_list_repo import StockListRepository
+                stock_list = StockListRepository.list_active()
+                if stock_list:
+                    self.stock_list = stock_list
+                    logger.debug(f"从 Supabase 加载自选股: {len(stock_list)} 只")
+                    return
+                else:
+                    logger.debug("Supabase 自选股为空，回退到 .env")
+            except Exception as e:
+                logger.warning(f"Supabase 读取自选股失败，回退到 .env: {e}")
+
+        # 回退：从 .env 文件读取最新配置
         env_file = os.getenv("ENV_FILE")
         env_path = Path(env_file) if env_file else (Path(__file__).parent.parent / '.env')
         stock_list_str = ''
         if env_path.exists():
-            # 直接从 .env 文件读取最新的配置
             env_values = dotenv_values(env_path)
             stock_list_str = (env_values.get('STOCK_LIST') or '').strip()
 
