@@ -11,12 +11,15 @@ A股自选股智能分析系统 - 配置管理模块
 """
 
 import json
+import logging
 import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 from dotenv import load_dotenv, dotenv_values
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
